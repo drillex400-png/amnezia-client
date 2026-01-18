@@ -1,0 +1,97 @@
+name: Android Dev Build (Fork Optimized)
+
+on:
+  push:
+    branches: [ "**" ] # Срабатывает на любой пуш в любую ветку
+  workflow_dispatch:   # Кнопка ручного запуска
+
+jobs:
+  build:
+    name: Build Android arm64
+    runs-on: ubuntu-latest
+
+    env:
+      # Используем стабильную версию Qt, совместимую с Amnezia
+      QT_VERSION: 6.8.0 
+      # Пустые значения для секретов, чтобы CMake не ругался на их отсутствие
+      PROD_AGW_PUBLIC_KEY: ""
+      DEV_AGW_PUBLIC_KEY: ""
+      ANDROID_NDK_VERSION: r26b
+
+    steps:
+      # 1. Получение кода с подмодулями (критично для Amnezia)
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      # 2. Установка Java 17 (требование для NDK r26+)
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # 3. Установка Qt (только нужная архитектура для ускорения)
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: 'linux'
+          target: 'android'
+          arch: 'android_arm64_v8a'
+          modules: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
+          # Кэширование для ускорения повторных сборок
+          cache: true 
+
+      # 4. Установка Android NDK
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: ${{ env.ANDROID_NDK_VERSION }}
+
+      # 5. Генерация временного ключа подписи (Keystore)
+      # Это позволяет собрать APK без наличия официальных секретов Amnezia
+      - name: Generate Debug Keystore
+        run: |
+          keytool -genkey -v -keystore debug.keystore \
+            -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass android -keypass android \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      # 6. Конфигурация CMake
+      # Мы передаем путь к созданному ключу, чтобы Gradle мог подписать APK
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DQT_ANDROID_BUILD_ALL_ABIS=OFF \
+            -DANDROID_ABI=arm64-v8a \
+            -DCMAKE_TOOLCHAIN_FILE=$QT_ROOT_DIR/lib/cmake/Qt6/qt.toolchain.cmake \
+            -DANDROID_SDK_ROOT=$ANDROID_SDK_ROOT \
+            -DANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }} \
+            -DQT_ANDROID_Sign_Package=ON \
+            -DQT_ANDROID_KEYSTORE_PATH=$(pwd)/debug.keystore \
+            -DQT_ANDROID_KEYSTORE_STORE_PASS=android \
+            -DQT_ANDROID_KEYSTORE_ALIAS=androiddebugkey \
+            -DQT_ANDROID_KEYSTORE_KEY_PASS=android
+
+      # 7. Сборка проекта
+      - name: Build
+        run: cmake --build build --parallel
+
+      # 8. Упаковка в APK
+      - name: Package APK
+        run: cmake --build build --target android-make-apk
+
+      # 9. Загрузка результата (APK)
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AmneziaVPN-Dev-arm64
+          # Qt по умолчанию кладет APK в папку android-build
+          path: build/android-build/*.apk
+          retention-days: 7
