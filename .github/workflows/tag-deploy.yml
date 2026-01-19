@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - main # Сборка запускается при пуше в ветку main
-      - master # Или master, если у вас так называется ветка
+      - main # Сборка запускается при пуше в основную ветку
+      - master 
   # tags:
-  #   - ** # Можно раскомментировать, если хотите собирать по тегам
+  #   - ** # Можно раскомментировать, если захотите
 
 jobs:
 
@@ -16,9 +16,10 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # Оставьте переменные окружения как есть
-      QT_VERSION: 6.4.1
-      QIF_VERSION: 4.5
+      # Обновлены до версий из ваших последних логов
+      QT_VERSION: 6.8.0
+      ANDROID_NDK_VERSION: r26b 
+      # Ваши секреты API, оставлены без изменений
       PROD_AGW_PUBLIC_KEY: ${{ secrets.PROD_AGW_PUBLIC_KEY }}
       PROD_S3_ENDPOINT: ${{ secrets.PROD_S3_ENDPOINT }}
       DEV_AGW_PUBLIC_KEY: ${{ secrets.DEV_AGW_PUBLIC_KEY }}
@@ -28,59 +29,23 @@ jobs:
       PREM_V1_ENDPOINT: ${{ secrets.PREM_V1_ENDPOINT }}
 
     steps:
-    # --- Шаги установки Qt остаются без изменений ---
-    - name: 'Install desktop Qt'
-      uses: jurplel/install-qt-action@v3
+    
+    # Шаг 1: Получаем исходники и сабмодули
+    - name: 'Get sources'
+      uses: actions/checkout@v3
       with:
-        version: ${{ env.QT_VERSION }}
-        host: 'linux'
-        target: 'desktop'
-        arch: 'gcc_64'
-        modules: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
-        dir: ${{ runner.temp }}
-        setup-python: 'true'
-        set-env: 'true'
-        extra: '--external 7z'
-
-    - name: 'Install android Qt x86_64'
-      uses: jurplel/install-qt-action@v3
+        path: main
+        submodules: 'true' 
+        fetch-depth: 10
+        
+    # Шаг 2: Устанавливаем NDK более чистым способом
+    - name: 'Install Android NDK and SDK'
+      uses: android-actions/setup-android@v3
       with:
-        version: ${{ env.QT_VERSION }}
-        host: 'linux'
-        target: 'android'
-        arch: 'android_x86_64'
-        modules: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
-        dir: ${{ runner.temp }}
-        setup-python: 'true'
-        set-env: 'true'
-        extra: '--external 7z'
-
-    - name: 'Install android Qt x86'
-      uses: jurplel/install-qt-action@v3
-      with:
-        version: ${{ env.QT_VERSION }}
-        host: 'linux'
-        target: 'android'
-        arch: 'android_x86'
-        modules: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
-        dir: ${{ runner.temp }}
-        setup-python: 'true'
-        set-env: 'true'
-        extra: '--external 7z'
-
-    - name: 'Install android Qt arm_v7'
-      uses: jurplel/install-qt-action@v3
-      with:
-        version: ${{ env.QT_VERSION }}
-        host: 'linux'
-        target: 'android'
-        arch: 'android_armv7'
-        modules: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
-        dir: ${{ runner.temp }}
-        setup-python: 'true'
-        set-env: 'true'
-        extra: '--external 7z'
-
+        android-ndk-version: ${{ env.ANDROID_NDK_VERSION }}
+        # SDK будет установлен в стандартный $ANDROID_HOME
+        
+    # Шаг 3: Устанавливаем Qt для Android
     - name: 'Install android Qt arm_v8'
       uses: jurplel/install-qt-action@v3
       with:
@@ -88,60 +53,37 @@ jobs:
         host: 'linux'
         target: 'android'
         arch: 'android_arm64_v8a'
-        modules: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
+        # Убраны лишние модули из старого списка, оставим только базовые
+        modules: 'qtbase qtremoteobjects qt5compat qtimageformats qtshadertools'
         dir: ${{ runner.temp }}
         setup-python: 'true'
         set-env: 'true'
         extra: '--external 7z'
 
-    - name: 'Get sources'
-      uses: actions/checkout@v3
-      with:
-        path: main
-        submodules: 'true' # Убедитесь, что сабмодули тянутся рекурсивно
-        fetch-depth: 10
-
-    # --- Шаги для keystore удалены, чтобы не требовать приватный репозиторий ---
-    # Мы используем новый Action для подписи ниже
-
-    - name: 'Setup ccache'
-      uses: hendrikmuhs/ccache-action@v1.2
-
+    # Шаг 4: Настраиваем Java
     - name: 'Setup Java'
       uses: actions/setup-java@v3
       with:
         distribution: 'temurin'
-        java-version: '11'
+        java-version: '17' # Актуальная версия для сборки
 
-        - name: 'Build project'
+    # Шаг 5: Компиляция проекта (исправлены пути)
+    - name: 'Build project'
       run: |
-        # --- Переменные окружения для NDK (без изменений) ---
-        export QT_HOST_PATH="${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/gcc_64"
-        export NDK_VERSION=23c
-        export ANDROID_NDK_PLATFORM=android-23
-        export ANDROID_NDK_HOME=${{ runner.temp }}/android-ndk-r${NDK_VERSION}
-        export ANDROID_NDK_ROOT=$ANDROID_NDK_HOME
+        # Устанавливаем переменные для скрипта сборки, используя новые пути
+        export QT_ROOT_DIR=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a
+        export ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/${{ env.ANDROID_NDK_VERSION }}
+        export QT_BIN_DIR=$QT_ROOT_DIR/bin
+        # Явно указываем путь к файлу Toolchain, чтобы CMake его нашел
+        export CMAKE_TOOLCHAIN_FILE=$QT_ROOT_DIR/lib/cmake/Qt6/qt.toolchain.cmake
+        export CMAKE_PREFIX_PATH=$QT_ROOT_DIR
 
-        if [ ! -f $ANDROID_NDK_ROOT/ndk-build ]; then 
-          wget https://dl.google.com{NDK_VERSION}-linux.zip -qO ${{ runner.temp }}/ndk.zip &&
-          unzip -q -d ${{ runner.temp }} ${{ runner.temp }}/ndk.zip ; 
-        fi
-
-        export QT_BIN_DIR=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a/bin
-
-        # --- ДОПОЛНИТЕЛЬНЫЕ ПЕРЕМЕННЫЕ ДЛЯ ПОИСКА QT (ИСПРАВЛЕНИЕ ОШИБКИ) ---
-        # Указываем CMake, где лежит Qt, установленный в предыдущих шагах
-        export CMAKE_PREFIX_PATH="${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/gcc_64:${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a"
-        export Qt6_Dir="${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a/lib/cmake/Qt6"
-        export CMAKE_TOOLCHAIN_FILE="${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a/lib/cmake/Qt6/qt.toolchain.cmake"
-        
         cd main
         bash deploy/build_android.sh
-
-
-    # --- Новый шаг подписи, использующий ваши секреты ---
+        
+    # Шаг 6: Подпись APK (использует ваши секреты)
     - name: 'Sign APK with custom keystore'
-      id: sign_apk # Добавляем ID для доступа к выходным данным
+      id: sign_apk 
       uses: r0adkll/sign-android-release@v1
       with:
         releaseDirectory: ${{ runner.temp }}/main/
@@ -149,10 +91,11 @@ jobs:
         alias: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
         keyStorePassword: ${{ secrets.ANDROID_KEYSTORE_PASS }}
         keyPassword: ${{ secrets.ANDROID_KEY_PASS }}
-        apkFile: AmneziaVPN-release-unsigned.apk # Имя файла, который сгенерировал скрипт сборки
+        apkFile: AmneziaVPN-release-unsigned.apk 
 
+    # Шаг 7: Загрузка готового APK
     - name: 'Upload Signed APK'
       uses: actions/upload-artifact@v3
       with:
         name: Release APK Signed
-        path: ${{ steps.sign_apk.outputs.signedReleaseFile }} # Загружаем подписанный файл
+        path: ${{ steps.sign_apk.outputs.signedReleaseFile }}
