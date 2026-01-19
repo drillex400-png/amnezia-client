@@ -1,4 +1,4 @@
-name: Android Release Build (Qt 6.7.0 Stable)
+name: Android Release Build (Final Fix - AQT 3.3.0)
 
 on:
   push:
@@ -11,11 +11,11 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # ИСПОЛЬЗУЕМ 6.7.0:
-      # 1. Поддерживает политику QTP0002 (в отличие от 6.5)
-      # 2. Стабильна в репозиториях (в отличие от 6.7.2/6.8.0 прямо сейчас)
-      QT_VERSION: 6.7.0
+      # Используем 6.7.3 - это стабильная версия, которая поддерживает QTP0002
+      QT_VERSION: 6.7.3
       ANDROID_NDK_VERSION: r26b
+      # Зеркало из оригинального файла (deploy.yml), чтобы избежать ошибок скачивания
+      QT_MIRROR: https://mirrors.ocf.berkeley.edu/qt/
       PROD_AGW_PUBLIC_KEY: ${{ secrets.PROD_AGW_PUBLIC_KEY }}
       DEV_AGW_PUBLIC_KEY: ${{ secrets.DEV_AGW_PUBLIC_KEY }}
 
@@ -38,7 +38,7 @@ jobs:
           java-version: '17'
 
       # ШАГ 1: Установка Host Qt (Desktop)
-      # Убрали лишние модули, оставили только критичные для сборки
+      # КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: aqtversion: '==3.3.0' и extra: '--base ...'
       - name: Install Host Qt
         uses: jurplel/install-qt-action@v3
         with:
@@ -48,11 +48,12 @@ jobs:
           arch: 'gcc_64'
           dir: ${{ runner.temp }}
           cache: true
-          # Только qtshadertools и compat нужны для компиляции ресурсов
+          # Важно: обновляем версию установщика и указываем зеркало как в оригинале
+          aqtversion: '==3.3.0'
+          extra: '--base ${{ env.QT_MIRROR }}'
           modules: 'qtshadertools qt5compat'
 
       # ШАГ 2: Установка Target Qt (Android)
-      # Здесь модули нужны все
       - name: Install Android Qt
         uses: jurplel/install-qt-action@v3
         with:
@@ -62,6 +63,9 @@ jobs:
           arch: 'android_arm64_v8a'
           dir: ${{ runner.temp }}
           cache: true
+          # Те же исправления для Android версии
+          aqtversion: '==3.3.0'
+          extra: '--base ${{ env.QT_MIRROR }}'
           modules: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
 
       - name: Setup Android NDK
