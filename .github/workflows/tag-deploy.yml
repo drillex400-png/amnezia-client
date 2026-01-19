@@ -1,4 +1,4 @@
-name: Android Release Build (With Host Tools)
+name: Android Release Build (Final Stable)
 
 on:
   push:
@@ -11,7 +11,8 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      QT_VERSION: 6.8.0
+      # Используем LTS версию (6.5.3), она максимально совместима и стабильна
+      QT_VERSION: 6.5.3
       ANDROID_NDK_VERSION: r26b
       PROD_AGW_PUBLIC_KEY: ${{ secrets.PROD_AGW_PUBLIC_KEY }}
       DEV_AGW_PUBLIC_KEY: ${{ secrets.DEV_AGW_PUBLIC_KEY }}
@@ -34,8 +35,8 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # ШАГ 1: Установка Desktop Qt (Обязательно для Host Tools)
-      # Это создаст папку .../gcc_64, которую требует CMake
+      # ШАГ 1: Установка Desktop Qt (Host Tools) - КАК В ОРИГИНАЛЕ
+      # Это критически важно для кросс-компиляции
       - name: Install Host Qt
         uses: jurplel/install-qt-action@v3
         with:
@@ -45,10 +46,10 @@ jobs:
           arch: 'gcc_64'
           dir: ${{ runner.temp }}
           cache: true
+          # Набор модулей как в оригинале
           modules: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
 
-      # ШАГ 2: Установка Android Qt
-      # Это создаст папку .../android_arm64_v8a
+      # ШАГ 2: Установка Android Qt - КАК В ОРИГИНАЛЕ
       - name: Install Android Qt
         uses: jurplel/install-qt-action@v3
         with:
@@ -72,11 +73,10 @@ jobs:
         run: |
           echo "$KEYSTORE_BASE64" | base64 --decode > release.keystore
 
-      # ШАГ 3: Конфигурация
-      # Теперь мы точно знаем, где лежат папки, так как установили их в ${{ runner.temp }}
+      # ШАГ 3: Сборка
       - name: Configure CMake
         run: |
-          # Определяем пути явно
+          # Явные пути к установленным Qt, чтобы CMake не запутался
           export QT_HOST_PATH=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/gcc_64
           export QT_ANDROID_PATH=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a
           
