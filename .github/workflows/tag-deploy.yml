@@ -1,8 +1,8 @@
-name: Android Release Build (Fixed)
+name: Android Release Build (Final Fix)
 
 on:
   push:
-    branches: [ "master", "main" ]
+    branches: [ "**" ] # Срабатывает на любой пуш
   workflow_dispatch:
 
 jobs:
@@ -13,7 +13,7 @@ jobs:
     env:
       QT_VERSION: 6.8.0
       ANDROID_NDK_VERSION: r26b
-      # Используем секреты, добавленные в репозиторий
+      # Секреты для приложения
       PROD_AGW_PUBLIC_KEY: ${{ secrets.PROD_AGW_PUBLIC_KEY }}
       DEV_AGW_PUBLIC_KEY: ${{ secrets.DEV_AGW_PUBLIC_KEY }}
 
@@ -24,7 +24,7 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      # 1. Обязательная установка Ninja (исправляет ошибку генератора)
+      # 1. Установка Ninja (обязательно)
       - name: Install Build Tools
         run: |
           sudo apt-get update
@@ -36,7 +36,7 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # 2. Установка Qt. Эта команда автоматически создаст переменную env.Qt6_DIR
+      # 2. Установка Qt (создает переменную env.Qt6_DIR)
       - name: Install Qt
         uses: jurplel/install-qt-action@v3
         with:
@@ -53,18 +53,17 @@ jobs:
         with:
           ndk-version: ${{ env.ANDROID_NDK_VERSION }}
 
-      # 3. Декодируем ваш Keystore из секретов
+      # 3. Подготовка Keystore (ключ подписи)
       - name: Decode Keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
           echo "$KEYSTORE_BASE64" | base64 --decode > release.keystore
 
-      # 4. Сборка (Исправлен путь к toolchain и использование Ninja)
+      # 4. Конфигурация CMake
+      # ВНИМАНИЕ: Здесь использована ${{ env.Qt6_DIR }} вместо $QT_ROOT_DIR
       - name: Configure CMake
         run: |
-          echo "Qt is installed at: ${{ env.Qt6_DIR }}"
-          
           cmake -S . -B build -GNinja \
             -DCMAKE_BUILD_TYPE=Release \
             -DQT_ANDROID_BUILD_ALL_ABIS=OFF \
