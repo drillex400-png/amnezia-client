@@ -1,4 +1,4 @@
-name: Android Release Build (Jurplel Optimized)
+name: Android Release Build (Final Working)
 
 on:
   push:
@@ -11,10 +11,11 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # Используем 6.7.2 - она стабильна и поддерживает нужные политики.
-      # Если принципиально нужна 6.8.0 - поменяй цифру, но 6.7.2 надежнее.
-      QT_VERSION: 6.7.2
+      # Используем 6.8.0, так как вы подтвердили, что она у вас скачивается
+      QT_VERSION: 6.8.0
       ANDROID_NDK_VERSION: r26b
+      # Зеркало из вашего файла deploy (1).yml для надежности
+      QT_MIRROR: https://mirrors.ocf.berkeley.edu/qt/
       PROD_AGW_PUBLIC_KEY: ${{ secrets.PROD_AGW_PUBLIC_KEY }}
       DEV_AGW_PUBLIC_KEY: ${{ secrets.DEV_AGW_PUBLIC_KEY }}
 
@@ -36,10 +37,10 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # --- БЛОК УСТАНОВКИ QT (Твой метод, но двойной) ---
+      # --- УСТАНОВКА QT (Исправлено под вашу версию 6.8.0) ---
 
-      # 1. Сначала ставим Desktop (Host) версию. 
-      # Это ОБЯЗАТЕЛЬНО для кросс-компиляции, иначе CMake упадет.
+      # 1. Сначала ставим Desktop (Host) версию.
+      # Без этого шага CMake упадет с ошибкой "missing QT_HOST_PATH".
       - name: Install Host Qt
         uses: jurplel/install-qt-action@v3
         with:
@@ -49,11 +50,12 @@ jobs:
           arch: 'gcc_64'
           dir: ${{ runner.temp }}
           cache: true
-          # Явно обновляем aqt, чтобы не было ошибок XML
+          # Используем параметры из вашего deploy (1).yml
           aqtversion: '==3.3.0'
+          extra: '--base ${{ env.QT_MIRROR }}'
           modules: 'qtshadertools qt5compat'
 
-      # 2. Теперь ставим Android (Target) версию.
+      # 2. Ставим Android (Target) версию.
       - name: Install Android Qt
         uses: jurplel/install-qt-action@v3
         with:
@@ -64,9 +66,10 @@ jobs:
           dir: ${{ runner.temp }}
           cache: true
           aqtversion: '==3.3.0'
+          extra: '--base ${{ env.QT_MIRROR }}'
           modules: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
 
-      # --- КОНЕЦ БЛОКА QT ---
+      # --- КОНЕЦ УСТАНОВКИ QT ---
 
       - name: Setup Android NDK
         id: setup-ndk
@@ -82,7 +85,7 @@ jobs:
 
       - name: Configure CMake
         run: |
-          # Мы знаем точные пути, так как указали dir: ${{ runner.temp }} выше
+          # Явно указываем пути, чтобы CMake нашел обе версии Qt
           export QT_HOST_PATH=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/gcc_64
           export QT_ANDROID_PATH=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a
           
