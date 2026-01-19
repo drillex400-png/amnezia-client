@@ -1,4 +1,5 @@
-name: Android Release Build (Final Clean)
+```yaml
+name: Android Release Build (arm64)
 
 on:
   push:
@@ -8,59 +9,63 @@ on:
 jobs:
   build:
     name: Build Android arm64
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     env:
-      # Используем 6.8.0, так как она у тебя успешно устанавливается
-      QT_VERSION: 6.8.0
+      QT_VERSION: 6.6.2
       ANDROID_NDK_VERSION: r26b
       PROD_AGW_PUBLIC_KEY: ${{ secrets.PROD_AGW_PUBLIC_KEY }}
       DEV_AGW_PUBLIC_KEY: ${{ secrets.DEV_AGW_PUBLIC_KEY }}
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Install Build Tools
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build build-essential libgl1-mesa-dev
+          sudo apt-get install -y \
+            ninja-build \
+            build-essential \
+            libgl1-mesa-dev \
+            unzip
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: temurin
+          java-version: 17
 
-      # --- УСТАНОВКА QT (Без лишних флагов, как в твоем рабочем примере) ---
+      # =======================
+      # Qt installation
+      # =======================
 
-      # 1. Desktop (Host) - Обязательно для компиляции
-      - name: Install Host Qt
+      - name: Install Qt Host (Desktop)
         uses: jurplel/install-qt-action@v3
         with:
           version: ${{ env.QT_VERSION }}
-          host: 'linux'
-          target: 'desktop'
-          arch: 'gcc_64'
+          host: linux
+          target: desktop
+          arch: gcc_64
           cache: true
-          # Минимум модулей для хоста
-          modules: 'qtshadertools qt5compat'
+          modules: qtshadertools
 
-      # 2. Android (Target) - Твой рабочий шаг
-      - name: Install Android Qt
+      - name: Install Qt for Android (arm64)
         uses: jurplel/install-qt-action@v3
         with:
           version: ${{ env.QT_VERSION }}
-          host: 'linux'
-          target: 'android'
-          arch: 'android_arm64_v8a'
+          host: linux
+          target: android
+          arch: android_arm64_v8a
           cache: true
-          modules: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
+          modules: qtremoteobjects qtimageformats qtshadertools
 
-      # --- КОНЕЦ УСТАНОВКИ ---
+      # =======================
+      # Android NDK
+      # =======================
 
       - name: Setup Android NDK
         id: setup-ndk
@@ -68,37 +73,46 @@ jobs:
         with:
           ndk-version: ${{ env.ANDROID_NDK_VERSION }}
 
-      - name: Decode Keystore
+      # =======================
+      # Keystore
+      # =======================
+
+      - name: Decode Android keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
           echo "$KEYSTORE_BASE64" | base64 --decode > release.keystore
 
-      - name: Configure CMake
+      # =======================
+      # CMake configure
+      # =======================
+
+      - name: Configure CMake (Android arm64)
         run: |
-          # Jurplel устанавливает Qt в папку ${{ github.workspace }}/Qt по умолчанию
-          # Мы формируем пути динамически
-          
-          export QT_HOST_PATH=${{ github.workspace }}/Qt/${{ env.QT_VERSION }}/gcc_64
-          export QT_ANDROID_PATH=${{ github.workspace }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a
-          
-          echo "Host Qt: $QT_HOST_PATH"
-          echo "Android Qt: $QT_ANDROID_PATH"
-          
+          export QT_HOST_PATH="${{ github.workspace }}/Qt/${{ env.QT_VERSION }}/gcc_64"
+          export QT_ANDROID_PATH="${{ github.workspace }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a"
+
+          echo "QT_HOST_PATH=$QT_HOST_PATH"
+          echo "QT_ANDROID_PATH=$QT_ANDROID_PATH"
+
           cmake -S . -B build -GNinja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DQT_ANDROID_BUILD_ALL_ABIS=OFF \
             -DANDROID_ABI=arm64-v8a \
-            -DCMAKE_TOOLCHAIN_FILE=$QT_ANDROID_PATH/lib/cmake/Qt6/qt.toolchain.cmake \
-            -DQT_HOST_PATH=$QT_HOST_PATH \
-            -DANDROID_SDK_ROOT=$ANDROID_HOME \
-            -DANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }} \
+            -DQT_ANDROID_BUILD_ALL_ABIS=OFF \
+            -DCMAKE_TOOLCHAIN_FILE="$QT_ANDROID_PATH/lib/cmake/Qt6/qt.toolchain.cmake" \
+            -DQT_HOST_PATH="$QT_HOST_PATH" \
+            -DANDROID_SDK_ROOT="$ANDROID_HOME" \
+            -DANDROID_NDK_ROOT="${{ steps.setup-ndk.outputs.ndk-path }}" \
             -DCMAKE_MAKE_PROGRAM=$(which ninja) \
-            -DQT_ANDROID_Sign_Package=ON \
-            -DQT_ANDROID_KEYSTORE_PATH=$(pwd)/release.keystore \
-            -DQT_ANDROID_KEYSTORE_STORE_PASS=${{ secrets.ANDROID_KEYSTORE_PASS }} \
-            -DQT_ANDROID_KEYSTORE_ALIAS=${{ secrets.ANDROID_KEYSTORE_ALIAS }} \
-            -DQT_ANDROID_KEYSTORE_KEY_PASS=${{ secrets.ANDROID_KEY_PASS }}
+            -DQT_ANDROID_SIGN_PACKAGE=ON \
+            -DQT_ANDROID_KEYSTORE_PATH="$(pwd)/release.keystore" \
+            -DQT_ANDROID_KEYSTORE_STORE_PASS="${{ secrets.ANDROID_KEYSTORE_PASS }}" \
+            -DQT_ANDROID_KEYSTORE_ALIAS="${{ secrets.ANDROID_KEYSTORE_ALIAS }}" \
+            -DQT_ANDROID_KEYSTORE_KEY_PASS="${{ secrets.ANDROID_KEY_PASS }}"
+
+      # =======================
+      # Build & package
+      # =======================
 
       - name: Build
         run: cmake --build build --parallel
@@ -106,9 +120,10 @@ jobs:
       - name: Package APK
         run: cmake --build build --target android-make-apk
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AmneziaVPN-Release-arm64
+          name: AmneziaVPN-Android-arm64
           path: build/android-build/*.apk
           retention-days: 7
+```
