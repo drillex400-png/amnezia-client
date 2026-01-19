@@ -1,4 +1,4 @@
-name: Android Release Build (Qt 6.7.2 Fix)
+name: Android Release Build (Qt 6.7.0 Stable)
 
 on:
   push:
@@ -11,9 +11,10 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # ВАЖНО: 6.7.2 - минимальная версия, поддерживающая QTP0002, 
-      # и при этом стабильная для установки (в отличие от 6.8)
-      QT_VERSION: 6.7.2
+      # ИСПОЛЬЗУЕМ 6.7.0:
+      # 1. Поддерживает политику QTP0002 (в отличие от 6.5)
+      # 2. Стабильна в репозиториях (в отличие от 6.7.2/6.8.0 прямо сейчас)
+      QT_VERSION: 6.7.0
       ANDROID_NDK_VERSION: r26b
       PROD_AGW_PUBLIC_KEY: ${{ secrets.PROD_AGW_PUBLIC_KEY }}
       DEV_AGW_PUBLIC_KEY: ${{ secrets.DEV_AGW_PUBLIC_KEY }}
@@ -37,7 +38,7 @@ jobs:
           java-version: '17'
 
       # ШАГ 1: Установка Host Qt (Desktop)
-      # Нужна для инструментов сборки (moc, rcc, repc)
+      # Убрали лишние модули, оставили только критичные для сборки
       - name: Install Host Qt
         uses: jurplel/install-qt-action@v3
         with:
@@ -47,10 +48,11 @@ jobs:
           arch: 'gcc_64'
           dir: ${{ runner.temp }}
           cache: true
-          # Минимальный набор модулей для Хоста, чтобы избежать ошибок скачивания
-          modules: 'qtremoteobjects qt5compat qtshadertools'
+          # Только qtshadertools и compat нужны для компиляции ресурсов
+          modules: 'qtshadertools qt5compat'
 
       # ШАГ 2: Установка Target Qt (Android)
+      # Здесь модули нужны все
       - name: Install Android Qt
         uses: jurplel/install-qt-action@v3
         with:
@@ -60,7 +62,6 @@ jobs:
           arch: 'android_arm64_v8a'
           dir: ${{ runner.temp }}
           cache: true
-          # Полный набор модулей для Android приложения
           modules: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
 
       - name: Setup Android NDK
