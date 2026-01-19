@@ -1,4 +1,4 @@
-name: Android Release Build (Final Fix)
+name: Android Release Build (Host Path Fix)
 
 on:
   push:
@@ -34,6 +34,7 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      # Установка Qt (автоматически ставит и Android версию, и Desktop tools)
       - name: Install Qt
         uses: jurplel/install-qt-action@v3
         with:
@@ -56,16 +57,18 @@ jobs:
         run: |
           echo "$KEYSTORE_BASE64" | base64 --decode > release.keystore
 
-      # ИСПРАВЛЕННЫЙ БЛОК КОНФИГУРАЦИИ
+      # ИСПРАВЛЕННЫЙ БЛОК: Добавлен QT_HOST_PATH
       - name: Configure CMake
         run: |
-          echo "Using Qt at: ${{ env.Qt6_DIR }}"
+          echo "Using Qt Android at: ${{ env.Qt6_DIR }}"
+          echo "Setting Qt Host at: ${{ env.Qt6_DIR }}/../gcc_64"
           
           cmake -S . -B build -GNinja \
             -DCMAKE_BUILD_TYPE=Release \
             -DQT_ANDROID_BUILD_ALL_ABIS=OFF \
             -DANDROID_ABI=arm64-v8a \
             -DCMAKE_TOOLCHAIN_FILE=${{ env.Qt6_DIR }}/lib/cmake/Qt6/qt.toolchain.cmake \
+            -DQT_HOST_PATH=${{ env.Qt6_DIR }}/../gcc_64 \
             -DANDROID_SDK_ROOT=$ANDROID_HOME \
             -DANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }} \
             -DCMAKE_MAKE_PROGRAM=$(which ninja) \
