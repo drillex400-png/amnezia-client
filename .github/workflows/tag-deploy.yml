@@ -1,4 +1,4 @@
-name: Android Release Build (Final 6.8.0 Fix)
+name: Android Release Build (Final Clean)
 
 on:
   push:
@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # Возвращаем 6.8.0, так как она у тебя успешно скачивалась без зеркал
+      # Используем 6.8.0, так как она у тебя успешно устанавливается
       QT_VERSION: 6.8.0
       ANDROID_NDK_VERSION: r26b
       PROD_AGW_PUBLIC_KEY: ${{ secrets.PROD_AGW_PUBLIC_KEY }}
@@ -35,7 +35,7 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # --- УСТАНОВКА QT 6.8.0 (Без принудительных зеркал) ---
+      # --- УСТАНОВКА QT (Без лишних флагов, как в твоем рабочем примере) ---
 
       # 1. Desktop (Host) - Обязательно для компиляции
       - name: Install Host Qt
@@ -45,13 +45,11 @@ jobs:
           host: 'linux'
           target: 'desktop'
           arch: 'gcc_64'
-          dir: ${{ runner.temp }}
           cache: true
-          # УБРАЛИ --base mirror! Используем стандартные сервера.
-          aqtversion: '==3.3.0'
+          # Минимум модулей для хоста
           modules: 'qtshadertools qt5compat'
 
-      # 2. Android (Target)
+      # 2. Android (Target) - Твой рабочий шаг
       - name: Install Android Qt
         uses: jurplel/install-qt-action@v3
         with:
@@ -59,10 +57,7 @@ jobs:
           host: 'linux'
           target: 'android'
           arch: 'android_arm64_v8a'
-          dir: ${{ runner.temp }}
           cache: true
-          # УБРАЛИ --base mirror!
-          aqtversion: '==3.3.0'
           modules: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
 
       # --- КОНЕЦ УСТАНОВКИ ---
@@ -81,9 +76,11 @@ jobs:
 
       - name: Configure CMake
         run: |
-          # Явно указываем пути (они теперь существуют)
-          export QT_HOST_PATH=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/gcc_64
-          export QT_ANDROID_PATH=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a
+          # Jurplel устанавливает Qt в папку ${{ github.workspace }}/Qt по умолчанию
+          # Мы формируем пути динамически
+          
+          export QT_HOST_PATH=${{ github.workspace }}/Qt/${{ env.QT_VERSION }}/gcc_64
+          export QT_ANDROID_PATH=${{ github.workspace }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a
           
           echo "Host Qt: $QT_HOST_PATH"
           echo "Android Qt: $QT_ANDROID_PATH"
