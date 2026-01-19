@@ -1,4 +1,4 @@
-name: Android Release Build (Funet Mirror)
+name: Android Release Build (Jurplel Optimized)
 
 on:
   push:
@@ -11,7 +11,8 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # Qt 6.7.2 обязательна для поддержки политики QTP0002
+      # Используем 6.7.2 - она стабильна и поддерживает нужные политики.
+      # Если принципиально нужна 6.8.0 - поменяй цифру, но 6.7.2 надежнее.
       QT_VERSION: 6.7.2
       ANDROID_NDK_VERSION: r26b
       PROD_AGW_PUBLIC_KEY: ${{ secrets.PROD_AGW_PUBLIC_KEY }}
@@ -24,10 +25,10 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Install System Dependencies
+      - name: Install Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build build-essential libgl1-mesa-dev python3-pip
+          sudo apt-get install -y ninja-build build-essential libgl1-mesa-dev
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -35,32 +36,43 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      # --- БЛОК УСТАНОВКИ QT (Твой метод, но двойной) ---
+
+      # 1. Сначала ставим Desktop (Host) версию. 
+      # Это ОБЯЗАТЕЛЬНО для кросс-компиляции, иначе CMake упадет.
+      - name: Install Host Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: 'linux'
+          target: 'desktop'
+          arch: 'gcc_64'
+          dir: ${{ runner.temp }}
+          cache: true
+          # Явно обновляем aqt, чтобы не было ошибок XML
+          aqtversion: '==3.3.0'
+          modules: 'qtshadertools qt5compat'
+
+      # 2. Теперь ставим Android (Target) версию.
+      - name: Install Android Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: 'linux'
+          target: 'android'
+          arch: 'android_arm64_v8a'
+          dir: ${{ runner.temp }}
+          cache: true
+          aqtversion: '==3.3.0'
+          modules: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
+
+      # --- КОНЕЦ БЛОКА QT ---
+
       - name: Setup Android NDK
         id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: ${{ env.ANDROID_NDK_VERSION }}
-
-      - name: Install aqtinstall
-        run: |
-          python3 -m pip install -U aqtinstall
-
-      # ШАГ 1: Ручная установка Host Qt (ЗЕРКАЛО FUNET)
-      # Используем финское зеркало NIC.FUNET.FI - самое надежное для Qt
-      - name: Install Host Qt
-        run: |
-          python3 -m aqt install-qt linux desktop ${{ env.QT_VERSION }} gcc_64 \
-            --outputdir ${{ runner.temp }}/Qt \
-            --base https://www.nic.funet.fi/pub/mirrors/download.qt-project.org \
-            --modules qtshadertools qt5compat
-
-      # ШАГ 2: Ручная установка Target Qt (ЗЕРКАЛО FUNET)
-      - name: Install Android Qt
-        run: |
-          python3 -m aqt install-qt linux android ${{ env.QT_VERSION }} android_arm64_v8a \
-            --outputdir ${{ runner.temp }}/Qt \
-            --base https://www.nic.funet.fi/pub/mirrors/download.qt-project.org \
-            --modules qtremoteobjects qt5compat qtimageformats qtshadertools
 
       - name: Decode Keystore
         env:
@@ -68,9 +80,9 @@ jobs:
         run: |
           echo "$KEYSTORE_BASE64" | base64 --decode > release.keystore
 
-      # ШАГ 3: Сборка
       - name: Configure CMake
         run: |
+          # Мы знаем точные пути, так как указали dir: ${{ runner.temp }} выше
           export QT_HOST_PATH=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/gcc_64
           export QT_ANDROID_PATH=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a
           
