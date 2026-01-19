@@ -1,101 +1,90 @@
-name: 'Release deploy workflow'
+name: Android Release Build (Secrets Enabled)
 
-on: 
-  workflow_dispatch:
+on:
   push:
-    branches:
-      - main # Сборка запускается при пуше в основную ветку
-      - master 
-  # tags:
-  #   - ** # Можно раскомментировать, если захотите
+    branches: [ "master", "main" ]
+  workflow_dispatch:
 
 jobs:
-
-  Build-Android-Release:
-    name: 'Build-Android-Release'
+  build:
+    name: Build Android arm64
     runs-on: ubuntu-latest
 
     env:
-      # Обновлены до версий из ваших последних логов
       QT_VERSION: 6.8.0
-      ANDROID_NDK_VERSION: r26b 
-      # Ваши секреты API, оставлены без изменений
+      ANDROID_NDK_VERSION: r26b
+      # Эти переменные нужны, если они используются внутри CMakeLists.txt
       PROD_AGW_PUBLIC_KEY: ${{ secrets.PROD_AGW_PUBLIC_KEY }}
-      PROD_S3_ENDPOINT: ${{ secrets.PROD_S3_ENDPOINT }}
       DEV_AGW_PUBLIC_KEY: ${{ secrets.DEV_AGW_PUBLIC_KEY }}
-      DEV_AGW_ENDPOINT: ${{ secrets.DEV_AGW_ENDPOINT }}
-      DEV_S3_ENDPOINT: ${{ secrets.DEV_S3_ENDPOINT }}
-      FREE_V2_ENDPOINT: ${{ secrets.FREE_V2_ENDPOINT }}
-      PREM_V1_ENDPOINT: ${{ secrets.PREM_V1_ENDPOINT }}
 
     steps:
-    
-    # Шаг 1: Получаем исходники и сабмодули
-    - name: 'Get sources'
-      uses: actions/checkout@v3
-      with:
-        path: main
-        submodules: 'true' 
-        fetch-depth: 10
-        
-    # Шаг 2: Устанавливаем NDK более чистым способом
-    - name: 'Install Android NDK and SDK'
-      uses: android-actions/setup-android@v3
-      with:
-        android-ndk-version: ${{ env.ANDROID_NDK_VERSION }}
-        # SDK будет установлен в стандартный $ANDROID_HOME
-        
-    # Шаг 3: Устанавливаем Qt для Android
-    - name: 'Install android Qt arm_v8'
-      uses: jurplel/install-qt-action@v3
-      with:
-        version: ${{ env.QT_VERSION }}
-        host: 'linux'
-        target: 'android'
-        arch: 'android_arm64_v8a'
-        # Убраны лишние модули из старого списка, оставим только базовые
-        modules: 'qtbase qtremoteobjects qt5compat qtimageformats qtshadertools'
-        dir: ${{ runner.temp }}
-        setup-python: 'true'
-        set-env: 'true'
-        extra: '--external 7z'
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
 
-    # Шаг 4: Настраиваем Java
-    - name: 'Setup Java'
-      uses: actions/setup-java@v3
-      with:
-        distribution: 'temurin'
-        java-version: '17' # Актуальная версия для сборки
+      # 1. Установка Ninja (обязательно для сборки Qt6)
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build build-essential libgl1-mesa-dev
 
-    # Шаг 5: Компиляция проекта (исправлены пути)
-    - name: 'Build project'
-      run: |
-        # Устанавливаем переменные для скрипта сборки, используя новые пути
-        export QT_ROOT_DIR=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a
-        export ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/${{ env.ANDROID_NDK_VERSION }}
-        export QT_BIN_DIR=$QT_ROOT_DIR/bin
-        # Явно указываем путь к файлу Toolchain, чтобы CMake его нашел
-        export CMAKE_TOOLCHAIN_FILE=$QT_ROOT_DIR/lib/cmake/Qt6/qt.toolchain.cmake
-        export CMAKE_PREFIX_PATH=$QT_ROOT_DIR
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
 
-        cd main
-        bash deploy/build_android.sh
-        
-    # Шаг 6: Подпись APK (использует ваши секреты)
-    - name: 'Sign APK with custom keystore'
-      id: sign_apk 
-      uses: r0adkll/sign-android-release@v1
-      with:
-        releaseDirectory: ${{ runner.temp }}/main/
-        signingKeyBase64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        alias: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
-        keyStorePassword: ${{ secrets.ANDROID_KEYSTORE_PASS }}
-        keyPassword: ${{ secrets.ANDROID_KEY_PASS }}
-        apkFile: AmneziaVPN-release-unsigned.apk 
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: 'linux'
+          target: 'android'
+          arch: 'android_arm64_v8a'
+          modules: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
+          cache: true
 
-    # Шаг 7: Загрузка готового APK
-    - name: 'Upload Signed APK'
-      uses: actions/upload-artifact@v3
-      with:
-        name: Release APK Signed
-        path: ${{ steps.sign_apk.outputs.signedReleaseFile }}
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: ${{ env.ANDROID_NDK_VERSION }}
+
+      # 2. Декодирование Keystore из секретов GitHub
+      - name: Decode Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > release.keystore
+
+      # 3. Конфигурация CMake (Исправлена переменная пути)
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build -GNinja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DQT_ANDROID_BUILD_ALL_ABIS=OFF \
+            -DANDROID_ABI=arm64-v8a \
+            -DCMAKE_TOOLCHAIN_FILE=${{ env.Qt6_DIR }}/lib/cmake/Qt6/qt.toolchain.cmake \
+            -DANDROID_SDK_ROOT=$ANDROID_HOME \
+            -DANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }} \
+            -DCMAKE_MAKE_PROGRAM=$(which ninja) \
+            -DQT_ANDROID_Sign_Package=ON \
+            -DQT_ANDROID_KEYSTORE_PATH=$(pwd)/release.keystore \
+            -DQT_ANDROID_KEYSTORE_STORE_PASS=${{ secrets.ANDROID_KEYSTORE_PASS }} \
+            -DQT_ANDROID_KEYSTORE_ALIAS=${{ secrets.ANDROID_KEYSTORE_ALIAS }} \
+            -DQT_ANDROID_KEYSTORE_KEY_PASS=${{ secrets.ANDROID_KEY_PASS }}
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Package APK
+        run: cmake --build build --target android-make-apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AmneziaVPN-Release-arm64
+          path: build/android-build/*.apk
+          retention-days: 7
