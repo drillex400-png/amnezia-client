@@ -1,4 +1,4 @@
-name: Android Release Build (Official Sources)
+name: Android Release Build (Manual AQT)
 
 on:
   push:
@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # Используем 6.7.2 - она есть на официальных серверах и поддерживает QTP0002
+      # Версия Qt, которая поддерживает QTP0002
       QT_VERSION: 6.7.2
       ANDROID_NDK_VERSION: r26b
       PROD_AGW_PUBLIC_KEY: ${{ secrets.PROD_AGW_PUBLIC_KEY }}
@@ -24,10 +24,10 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Install Build Tools
+      - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build build-essential libgl1-mesa-dev
+          sudo apt-get install -y ninja-build build-essential libgl1-mesa-dev python3-pip
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -35,39 +35,32 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # ШАГ 1: Установка Host Qt (Desktop)
-      # Убрали 'extra: --base ...', чтобы качать с официального сайта
-      - name: Install Host Qt
-        uses: jurplel/install-qt-action@v3
-        with:
-          version: ${{ env.QT_VERSION }}
-          host: 'linux'
-          target: 'desktop'
-          arch: 'gcc_64'
-          dir: ${{ runner.temp }}
-          cache: true
-          # Используем свежий aqt, но без кастомных зеркал
-          aqtversion: '==3.3.0'
-          modules: 'qtshadertools qt5compat'
-
-      # ШАГ 2: Установка Target Qt (Android)
-      - name: Install Android Qt
-        uses: jurplel/install-qt-action@v3
-        with:
-          version: ${{ env.QT_VERSION }}
-          host: 'linux'
-          target: 'android'
-          arch: 'android_arm64_v8a'
-          dir: ${{ runner.temp }}
-          cache: true
-          aqtversion: '==3.3.0'
-          modules: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
-
       - name: Setup Android NDK
         id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: ${{ env.ANDROID_NDK_VERSION }}
+
+      # ШАГ 1: Ручная установка Aqtinstall
+      # Мы ставим свежую версию напрямую через pip
+      - name: Install aqtinstall
+        run: |
+          python3 -m pip install aqtinstall
+
+      # ШАГ 2: Ручная установка Host Qt (Linux Desktop)
+      # Мы явно указываем outputdir, чтобы точно знать, где лежат файлы
+      - name: Install Host Qt
+        run: |
+          python3 -m aqt install-qt linux desktop ${{ env.QT_VERSION }} gcc_64 \
+            --outputdir ${{ runner.temp }}/Qt \
+            --modules qtshadertools qt5compat
+
+      # ШАГ 3: Ручная установка Target Qt (Android)
+      - name: Install Android Qt
+        run: |
+          python3 -m aqt install-qt linux android ${{ env.QT_VERSION }} android_arm64_v8a \
+            --outputdir ${{ runner.temp }}/Qt \
+            --modules qtremoteobjects qt5compat qtimageformats qtshadertools
 
       - name: Decode Keystore
         env:
@@ -75,15 +68,19 @@ jobs:
         run: |
           echo "$KEYSTORE_BASE64" | base64 --decode > release.keystore
 
-      # ШАГ 3: Сборка
+      # ШАГ 4: Сборка
       - name: Configure CMake
         run: |
-          # Явные пути
+          # Пути теперь фиксированы, так как мы задали --outputdir ${{ runner.temp }}/Qt
           export QT_HOST_PATH=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/gcc_64
           export QT_ANDROID_PATH=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a
           
           echo "Host Qt: $QT_HOST_PATH"
           echo "Android Qt: $QT_ANDROID_PATH"
+          
+          # Проверка существования путей (для отладки)
+          ls -F $QT_HOST_PATH/bin/
+          ls -F $QT_ANDROID_PATH/
           
           cmake -S . -B build -GNinja \
             -DCMAKE_BUILD_TYPE=Release \
