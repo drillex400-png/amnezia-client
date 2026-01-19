@@ -1,4 +1,4 @@
-name: Android Release Build (Final Fix - AQT 3.3.0)
+name: Android Release Build (Official Sources)
 
 on:
   push:
@@ -11,11 +11,9 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # Используем 6.7.3 - это стабильная версия, которая поддерживает QTP0002
-      QT_VERSION: 6.7.3
+      # Используем 6.7.2 - она есть на официальных серверах и поддерживает QTP0002
+      QT_VERSION: 6.7.2
       ANDROID_NDK_VERSION: r26b
-      # Зеркало из оригинального файла (deploy.yml), чтобы избежать ошибок скачивания
-      QT_MIRROR: https://mirrors.ocf.berkeley.edu/qt/
       PROD_AGW_PUBLIC_KEY: ${{ secrets.PROD_AGW_PUBLIC_KEY }}
       DEV_AGW_PUBLIC_KEY: ${{ secrets.DEV_AGW_PUBLIC_KEY }}
 
@@ -38,7 +36,7 @@ jobs:
           java-version: '17'
 
       # ШАГ 1: Установка Host Qt (Desktop)
-      # КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: aqtversion: '==3.3.0' и extra: '--base ...'
+      # Убрали 'extra: --base ...', чтобы качать с официального сайта
       - name: Install Host Qt
         uses: jurplel/install-qt-action@v3
         with:
@@ -48,9 +46,8 @@ jobs:
           arch: 'gcc_64'
           dir: ${{ runner.temp }}
           cache: true
-          # Важно: обновляем версию установщика и указываем зеркало как в оригинале
+          # Используем свежий aqt, но без кастомных зеркал
           aqtversion: '==3.3.0'
-          extra: '--base ${{ env.QT_MIRROR }}'
           modules: 'qtshadertools qt5compat'
 
       # ШАГ 2: Установка Target Qt (Android)
@@ -63,9 +60,7 @@ jobs:
           arch: 'android_arm64_v8a'
           dir: ${{ runner.temp }}
           cache: true
-          # Те же исправления для Android версии
           aqtversion: '==3.3.0'
-          extra: '--base ${{ env.QT_MIRROR }}'
           modules: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
 
       - name: Setup Android NDK
