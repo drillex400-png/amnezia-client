@@ -2,9 +2,12 @@ name: 'Release deploy workflow'
 
 on: 
   workflow_dispatch:
-  # push:
+  push:
+    branches:
+      - main # Сборка запускается при пуше в ветку main
+      - master # Или master, если у вас так называется ветка
   # tags:
-  #   - **
+  #   - ** # Можно раскомментировать, если хотите собирать по тегам
 
 jobs:
 
@@ -13,6 +16,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      # Оставьте переменные окружения как есть
       QT_VERSION: 6.4.1
       QIF_VERSION: 4.5
       PROD_AGW_PUBLIC_KEY: ${{ secrets.PROD_AGW_PUBLIC_KEY }}
@@ -24,6 +28,7 @@ jobs:
       PREM_V1_ENDPOINT: ${{ secrets.PREM_V1_ENDPOINT }}
 
     steps:
+    # --- Шаги установки Qt остаются без изменений ---
     - name: 'Install desktop Qt'
       uses: jurplel/install-qt-action@v3
       with:
@@ -93,19 +98,11 @@ jobs:
       uses: actions/checkout@v3
       with:
         path: main
-        submodules: 'true'
+        submodules: 'true' # Убедитесь, что сабмодули тянутся рекурсивно
         fetch-depth: 10
 
-    - name: 'Preparations before keystore fetching'
-      run: | 
-        mkdir keystore
-
-    - name: 'Getting keystore'
-      uses: actions/checkout@v3  
-      with:
-        repository: amnezia-vpn/amnezia-android-certificates
-        ssh-key: ${{ secrets.ANDROID_CERTS_SSH_PRIVATE_KEY }}
-        path: keystore
+    # --- Шаги для keystore удалены, чтобы не требовать приватный репозиторий ---
+    # Мы используем новый Action для подписи ниже
 
     - name: 'Setup ccache'
       uses: hendrikmuhs/ccache-action@v1.2
@@ -131,19 +128,23 @@ jobs:
 
         export QT_BIN_DIR=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a/bin
         cd main
+        # Это запускает скрипт сборки, который создаст файл AmneziaVPN-release-unsigned.apk
         bash deploy/build_android.sh
 
-    - name: 'Signing APK'
-      run: |
-        pwd
+    # --- Новый шаг подписи, использующий ваши секреты ---
+    - name: 'Sign APK with custom keystore'
+      id: sign_apk # Добавляем ID для доступа к выходным данным
+      uses: r0adkll/sign-android-release@v1
+      with:
+        releaseDirectory: ${{ runner.temp }}/main/
+        signingKeyBase64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        alias: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
+        keyStorePassword: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+        keyPassword: ${{ secrets.ANDROID_KEY_PASS }}
+        apkFile: AmneziaVPN-release-unsigned.apk # Имя файла, который сгенерировал скрипт сборки
 
-        ANDROID_BUILD_TOOLS_VERSION=30.0.3
-
-        ${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS_VERSION}/zipalign -f -v 4 AmneziaVPN-release-unsigned.apk AmneziaVPN-release-aligned.apk
-        ${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS_VERSION}/apksigner sign --out AmneziaVPN-release-signed.apk --ks keystore/debug.keystore --ks-key-alias ${{ secrets.DEBUG_ANDROID_KEYSTORE_KEY_ALIAS }} --ks-pass pass:${{secrets.DEBUG_ANDROID_KEYSTOTE_KEY_PASS }} AmneziaVPN-release-aligned.apk
-
-    - name: 'Upload'
+    - name: 'Upload Signed APK'
       uses: actions/upload-artifact@v3
       with:
-        name: Release APK
-        path: ${{ runner.temp }}/main/AmneziaVPN-release-signed.apk
+        name: Release APK Signed
+        path: ${{ steps.sign_apk.outputs.signedReleaseFile }} # Загружаем подписанный файл
