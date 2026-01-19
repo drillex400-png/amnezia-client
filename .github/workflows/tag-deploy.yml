@@ -1,4 +1,4 @@
-```yaml
+
 name: Android Release Build (arm64)
 
 on:
