@@ -126,4 +126,3 @@ jobs:
           name: AmneziaVPN-Android-arm64
           path: build/android-build/*.apk
           retention-days: 7
-```
