@@ -1,4 +1,4 @@
-name: Android Release Build (Final Stable)
+name: Android Release Build (Qt 6.7.2 Fix)
 
 on:
   push:
@@ -11,8 +11,9 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # Используем LTS версию (6.5.3), она максимально совместима и стабильна
-      QT_VERSION: 6.5.3
+      # ВАЖНО: 6.7.2 - минимальная версия, поддерживающая QTP0002, 
+      # и при этом стабильная для установки (в отличие от 6.8)
+      QT_VERSION: 6.7.2
       ANDROID_NDK_VERSION: r26b
       PROD_AGW_PUBLIC_KEY: ${{ secrets.PROD_AGW_PUBLIC_KEY }}
       DEV_AGW_PUBLIC_KEY: ${{ secrets.DEV_AGW_PUBLIC_KEY }}
@@ -35,8 +36,8 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # ШАГ 1: Установка Desktop Qt (Host Tools) - КАК В ОРИГИНАЛЕ
-      # Это критически важно для кросс-компиляции
+      # ШАГ 1: Установка Host Qt (Desktop)
+      # Нужна для инструментов сборки (moc, rcc, repc)
       - name: Install Host Qt
         uses: jurplel/install-qt-action@v3
         with:
@@ -46,10 +47,10 @@ jobs:
           arch: 'gcc_64'
           dir: ${{ runner.temp }}
           cache: true
-          # Набор модулей как в оригинале
-          modules: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
+          # Минимальный набор модулей для Хоста, чтобы избежать ошибок скачивания
+          modules: 'qtremoteobjects qt5compat qtshadertools'
 
-      # ШАГ 2: Установка Android Qt - КАК В ОРИГИНАЛЕ
+      # ШАГ 2: Установка Target Qt (Android)
       - name: Install Android Qt
         uses: jurplel/install-qt-action@v3
         with:
@@ -59,6 +60,7 @@ jobs:
           arch: 'android_arm64_v8a'
           dir: ${{ runner.temp }}
           cache: true
+          # Полный набор модулей для Android приложения
           modules: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
 
       - name: Setup Android NDK
@@ -76,7 +78,7 @@ jobs:
       # ШАГ 3: Сборка
       - name: Configure CMake
         run: |
-          # Явные пути к установленным Qt, чтобы CMake не запутался
+          # Явные пути
           export QT_HOST_PATH=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/gcc_64
           export QT_ANDROID_PATH=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a
           
