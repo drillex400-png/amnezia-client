@@ -87,28 +87,32 @@ jobs:
       # CMake configure
       # =======================
 
-      - name: Configure CMake (Android arm64)
-        run: |
-          export QT_HOST_PATH="${{ github.workspace }}/Qt/${{ env.QT_VERSION }}/gcc_64"
-          export QT_ANDROID_PATH="${{ github.workspace }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a"
+ 
+- name: Configure CMake (Android arm64)
+  run: |
+    export QT_HOST_PATH="${{ github.workspace }}/Qt/${{ env.QT_VERSION }}/gcc_64"
+    export QT_ANDROID_PATH="${{ github.workspace }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a"
 
-          echo "QT_HOST_PATH=$QT_HOST_PATH"
-          echo "QT_ANDROID_PATH=$QT_ANDROID_PATH"
+    echo "QT_HOST_PATH=$QT_HOST_PATH"
+    echo "QT_ANDROID_PATH=$QT_ANDROID_PATH"
 
-          cmake -S . -B build -GNinja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DANDROID_ABI=arm64-v8a \
-            -DQT_ANDROID_BUILD_ALL_ABIS=OFF \
-            -DCMAKE_TOOLCHAIN_FILE="$QT_ANDROID_PATH/lib/cmake/Qt6/qt.toolchain.cmake" \
-            -DQT_HOST_PATH="$QT_HOST_PATH" \
-            -DANDROID_SDK_ROOT="$ANDROID_HOME" \
-            -DANDROID_NDK_ROOT="${{ steps.setup-ndk.outputs.ndk-path }}" \
-            -DCMAKE_MAKE_PROGRAM=$(which ninja) \
-            -DQT_ANDROID_SIGN_PACKAGE=ON \
-            -DQT_ANDROID_KEYSTORE_PATH="$(pwd)/release.keystore" \
-            -DQT_ANDROID_KEYSTORE_STORE_PASS="${{ secrets.ANDROID_KEYSTORE_PASS }}" \
-            -DQT_ANDROID_KEYSTORE_ALIAS="${{ secrets.ANDROID_KEYSTORE_ALIAS }}" \
-            -DQT_ANDROID_KEYSTORE_KEY_PASS="${{ secrets.ANDROID_KEY_PASS }}"
+    cmake -S . -B build -GNinja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DANDROID_ABI=arm64-v8a \
+      -DQT_ANDROID_BUILD_ALL_ABIS=OFF \
+      -DCMAKE_TOOLCHAIN_FILE="$QT_HOST_PATH/lib/cmake/Qt6/qt.toolchain.cmake" \
+      -DQT_HOST_PATH="$QT_HOST_PATH" \
+      -DQT_ANDROID_PATH="$QT_ANDROID_PATH" \
+      -DANDROID_SDK_ROOT="$ANDROID_HOME" \
+      -DANDROID_NDK_ROOT="${{ steps.setup-ndk.outputs.ndk-path }}" \
+      -DCMAKE_MAKE_PROGRAM=$(which ninja) \
+      -DQT_ANDROID_SIGN_PACKAGE=ON \
+      -DQT_ANDROID_KEYSTORE_PATH="$(pwd)/release.keystore" \
+      -DQT_ANDROID_KEYSTORE_STORE_PASS="${{ secrets.ANDROID_KEYSTORE_PASS }}" \
+      -DQT_ANDROID_KEYSTORE_ALIAS="${{ secrets.ANDROID_KEYSTORE_ALIAS }}" \
+      -DQT_ANDROID_KEYSTORE_KEY_PASS="${{ secrets.ANDROID_KEY_PASS }}"
+
+
 
       # =======================
       # Build & package
