@@ -1,4 +1,4 @@
-name: Fast Android Build (Debug)
+name: Fast Android Build (Debug Fixed)
 
 on:
   workflow_dispatch: # Кнопка запуска
@@ -29,9 +29,9 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # --- ИСПРАВЛЕНИЕ: ДВА ОТДЕЛЬНЫХ ШАГА ---
+      # --- ИСПРАВЛЕНИЕ: Версия установщика и разделение шагов ---
 
-      # 1. Сначала ставим Desktop (нужен для инструментов сборки)
+      # 1. Desktop (Host) - Инструменты сборки
       - name: Установка Qt (Desktop Host)
         uses: jurplel/install-qt-action@v3
         with:
@@ -41,9 +41,11 @@ jobs:
           arch: 'gcc_64'
           dir: ${{ runner.temp }}
           cache: true
+          # ВАЖНО: Принудительно ставим новую версию установщика
+          aqtversion: '==3.3.0'
           modules: 'qtshadertools qt5compat'
 
-      # 2. Потом ставим Android (для самого приложения)
+      # 2. Android (Target) - Библиотеки для телефона
       - name: Установка Qt (Android Target)
         uses: jurplel/install-qt-action@v3
         with:
@@ -53,6 +55,8 @@ jobs:
           arch: 'android_arm64_v8a'
           dir: ${{ runner.temp }}
           cache: true
+          # ВАЖНО: Принудительно ставим новую версию установщика
+          aqtversion: '==3.3.0'
           modules: 'qtshadertools qt5compat qtremoteobjects qtimageformats'
 
       # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
@@ -73,7 +77,6 @@ jobs:
 
       - name: Конфигурация CMake
         run: |
-          # Пути теперь точные, так как мы разделили установку
           export QT_HOST_PATH=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/gcc_64
           export QT_ANDROID_PATH=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a
           
