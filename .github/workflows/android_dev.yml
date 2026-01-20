@@ -1,7 +1,7 @@
 name: Fast Android Build (Debug)
 
 on:
-  workflow_dispatch: # Запуск по кнопке
+  workflow_dispatch: # Кнопка запуска
   push:
 
 jobs:
@@ -9,7 +9,6 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
-      # Используем 6.8.0, так как она у тебя успешно качалась
       QT_VERSION: 6.8.0
       ANDROID_NDK_VERSION: r26b
 
@@ -19,7 +18,7 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Ставим Ninja (ускоритель сборки)
+      - name: Ставим Ninja (ускоритель)
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build build-essential libgl1-mesa-dev
@@ -30,18 +29,33 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # Установка Qt (ОДНИМ БЛОКОМ для простоты)
-      - name: Установка Qt (Desktop + Android)
+      # --- ИСПРАВЛЕНИЕ: ДВА ОТДЕЛЬНЫХ ШАГА ---
+
+      # 1. Сначала ставим Desktop (нужен для инструментов сборки)
+      - name: Установка Qt (Desktop Host)
         uses: jurplel/install-qt-action@v3
         with:
           version: ${{ env.QT_VERSION }}
-          # Ставим сразу и для компа (host), и для телефона (target)
           host: 'linux'
-          target: 'desktop android'
-          arch: 'gcc_64 android_arm64_v8a'
+          target: 'desktop'
+          arch: 'gcc_64'
+          dir: ${{ runner.temp }}
+          cache: true
+          modules: 'qtshadertools qt5compat'
+
+      # 2. Потом ставим Android (для самого приложения)
+      - name: Установка Qt (Android Target)
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: 'linux'
+          target: 'android'
+          arch: 'android_arm64_v8a'
           dir: ${{ runner.temp }}
           cache: true
           modules: 'qtshadertools qt5compat qtremoteobjects qtimageformats'
+
+      # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
 
       - name: Настройка NDK
         id: setup-ndk
@@ -49,9 +63,7 @@ jobs:
         with:
           ndk-version: ${{ env.ANDROID_NDK_VERSION }}
 
-      # ГЛАВНЫЙ ФОКУС: Создаем временный ключ на лету
-      # Это избавляет от возни с Secrets в настройках
-      - name: Генерация ключа подписи
+      - name: Генерация временного ключа
         run: |
           keytool -genkey -v -keystore debug.keystore \
             -alias androiddebugkey \
@@ -61,6 +73,7 @@ jobs:
 
       - name: Конфигурация CMake
         run: |
+          # Пути теперь точные, так как мы разделили установку
           export QT_HOST_PATH=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/gcc_64
           export QT_ANDROID_PATH=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a
           
