@@ -1,57 +1,57 @@
-name: Android Dev Build (Fork Optimized)
+name: Fast Android Build (Debug)
 
 on:
+  workflow_dispatch: # Запуск по кнопке
   push:
-    branches: [ "**" ]
-  workflow_dispatch:
 
 jobs:
-  build:
-    name: Build Android arm64
+  build-debug:
     runs-on: ubuntu-latest
-
+    
     env:
+      # Используем 6.8.0, так как она у тебя успешно качалась
       QT_VERSION: 6.8.0
       ANDROID_NDK_VERSION: r26b
-      PROD_AGW_PUBLIC_KEY: ""
-      DEV_AGW_PUBLIC_KEY: ""
 
     steps:
-      - name: Checkout code
+      - name: Скачиваем код
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          fetch-depth: 0
 
-      # 1. НОВОЕ: Устанавливаем системные инструменты сборки (Ninja + Make)
-      - name: Install Build Tools
+      - name: Ставим Ninja (ускоритель сборки)
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build build-essential libgl1-mesa-dev
 
-      - name: Setup Java
+      - name: Настраиваем Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install Qt
+      # Установка Qt (ОДНИМ БЛОКОМ для простоты)
+      - name: Установка Qt (Desktop + Android)
         uses: jurplel/install-qt-action@v3
         with:
           version: ${{ env.QT_VERSION }}
+          # Ставим сразу и для компа (host), и для телефона (target)
           host: 'linux'
-          target: 'android'
-          arch: 'android_arm64_v8a'
-          modules: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
+          target: 'desktop android'
+          arch: 'gcc_64 android_arm64_v8a'
+          dir: ${{ runner.temp }}
           cache: true
+          modules: 'qtshadertools qt5compat qtremoteobjects qtimageformats'
 
-      - name: Setup Android NDK
+      - name: Настройка NDK
         id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: ${{ env.ANDROID_NDK_VERSION }}
 
-      - name: Generate Debug Keystore
+      # ГЛАВНЫЙ ФОКУС: Создаем временный ключ на лету
+      # Это избавляет от возни с Secrets в настройках
+      - name: Генерация ключа подписи
         run: |
           keytool -genkey -v -keystore debug.keystore \
             -alias androiddebugkey \
@@ -59,14 +59,17 @@ jobs:
             -storepass android -keypass android \
             -dname "CN=Android Debug,O=Android,C=US"
 
-      # 2. ИЗМЕНЕНО: Добавлен флаг -GNinja и явный путь к Ninja
-      - name: Configure CMake
+      - name: Конфигурация CMake
         run: |
+          export QT_HOST_PATH=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/gcc_64
+          export QT_ANDROID_PATH=${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/android_arm64_v8a
+          
           cmake -S . -B build -GNinja \
-            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_BUILD_TYPE=Debug \
             -DQT_ANDROID_BUILD_ALL_ABIS=OFF \
             -DANDROID_ABI=arm64-v8a \
-            -DCMAKE_TOOLCHAIN_FILE=$QT_ROOT_DIR/lib/cmake/Qt6/qt.toolchain.cmake \
+            -DCMAKE_TOOLCHAIN_FILE=$QT_ANDROID_PATH/lib/cmake/Qt6/qt.toolchain.cmake \
+            -DQT_HOST_PATH=$QT_HOST_PATH \
             -DANDROID_SDK_ROOT=$ANDROID_HOME \
             -DANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }} \
             -DCMAKE_MAKE_PROGRAM=$(which ninja) \
@@ -76,15 +79,12 @@ jobs:
             -DQT_ANDROID_KEYSTORE_ALIAS=androiddebugkey \
             -DQT_ANDROID_KEYSTORE_KEY_PASS=android
 
-      - name: Build
-        run: cmake --build build --parallel
+      - name: Сборка APK
+        run: cmake --build build --target android-make-apk --parallel
 
-      - name: Package APK
-        run: cmake --build build --target android-make-apk
-
-      - name: Upload APK
+      - name: Скачать готовый APK
         uses: actions/upload-artifact@v4
         with:
-          name: AmneziaVPN-Dev-arm64
+          name: Amnezia-Fast-Debug
           path: build/android-build/*.apk
-          retention-days: 7
+          retention-days: 3
